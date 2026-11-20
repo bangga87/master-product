@@ -1,4 +1,3 @@
-import { ManualApiBox } from "./ManualApiBox";
 import { Download, Image as ImageIcon, Loader2, Sparkles, Trash2 } from "lucide-react";
 import type { GeneratedRenderItem, PosterVariables } from "../types/poster";
 
@@ -42,8 +41,6 @@ export function AiRenderPanel({
 
   return (
     <div className="space-y-5">
-      <ManualApiBox />
-
       <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
           <div>
