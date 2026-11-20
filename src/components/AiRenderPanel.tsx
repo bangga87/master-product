@@ -41,6 +41,7 @@ export function AiRenderPanel({
   };
 
   return (
+    <ManualApiBox />
     <div className="space-y-5">
       <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
