@@ -1,3 +1,4 @@
+import { ManualApiBox } from "./ManualApiBox";
 import { Download, Image as ImageIcon, Loader2, Sparkles, Trash2 } from "lucide-react";
 import type { GeneratedRenderItem, PosterVariables } from "../types/poster";
 
