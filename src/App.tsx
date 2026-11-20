@@ -300,7 +300,7 @@ export default function App() {
     }
   };
 
-  const handleGeneratePoster = async () => {
+const handleGeneratePoster = async () => {
     const key = apiKey.trim();
     if (!key) {
       setActiveStudioView("render");
@@ -313,12 +313,6 @@ export default function App() {
     setGenerateError(null);
 
     try {
-      // Gunakan model Gemini multimodal yang mendukung output gambar via generateContent
-      const modelName =
-        qualityMode === "hd"
-          ? "gemini-3.1-flash-image-preview"
-          : "gemini-2.5-flash-image";
-
       const parts: Array<Record<string, any>> = [
         {
           text: `${compiledPrompt}\n\nInstruksi tambahan: Rasio aspek ${
@@ -329,7 +323,6 @@ export default function App() {
         },
       ];
 
-      // Jika ada logo yang diunggah (data URL), sertakan sebagai inlineData
       if (
         variables.logo_image_url &&
         variables.logo_image_url.startsWith("data:")
@@ -347,55 +340,126 @@ export default function App() {
         }
       }
 
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(key)}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [{ parts }],
-            generationConfig: {
-              responseModalities: ["IMAGE"],
-            },
-          }),
+      // Urutan model kandidat sesuai mode kualitas
+      const baseCandidates =
+        qualityMode === "hd"
+          ? [
+              "gemini-3.1-flash-image-preview",
+              "gemini-2.5-flash-image",
+              "gemini-2.0-flash-exp-image-generation",
+            ]
+          : [
+              "gemini-2.5-flash-image",
+              "gemini-3.1-flash-image-preview",
+              "gemini-2.0-flash-exp-image-generation",
+            ];
+
+      const candidateModels = [...baseCandidates];
+
+      // Coba ambil model tambahan dari ListModels jika tersedia
+      try {
+        const listRes = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`
+        );
+        const listData = await safeParseJson(listRes);
+        if (listRes.ok && Array.isArray(listData?.models)) {
+          for (const m of listData.models) {
+            const rawName = String(m?.name || "").replace(/^models\//, "");
+            const methods: string[] = Array.isArray(m?.supportedGenerationMethods)
+              ? m.supportedGenerationMethods
+              : [];
+            if (
+              rawName &&
+              methods.includes("generateContent") &&
+              (rawName.includes("image") || rawName.includes("flash")) &&
+              !candidateModels.includes(rawName)
+            ) {
+              candidateModels.push(rawName);
+            }
+          }
         }
-      );
-
-      const data = await safeParseJson(response);
-      if (!response.ok) {
-        throw new Error(
-          data?.error?.message || `Gagal merender gambar poster (HTTP ${response.status}).`
-        );
+      } catch {
+        // Abaikan jika ListModels gagal, tetap pakai daftar kandidat bawaan
       }
 
-      const responseParts: Array<Record<string, any>> =
-        data?.candidates?.[0]?.content?.parts || [];
-      const imagePart = responseParts.find(
-        (p) => p?.inlineData?.data && typeof p.inlineData.data === "string"
-      );
+      let lastErrorMessage = "Semua model kandidat gagal menghasilkan gambar.";
+      let succeededItem: GeneratedRenderItem | null = null;
 
-      if (!imagePart?.inlineData?.data) {
-        throw new Error(
-          "Respons API tidak menyertakan gambar. Pastikan model mendukung output gambar untuk API key Anda."
-        );
+      for (const modelName of candidateModels) {
+        try {
+          const response = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+              modelName
+            )}:generateContent?key=${encodeURIComponent(key)}`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                contents: [{ parts }],
+                generationConfig: {
+                  responseModalities: ["IMAGE"],
+                },
+              }),
+            }
+          );
+
+          const data = await safeParseJson(response);
+          if (!response.ok) {
+            const apiMsg =
+              data?.error?.message || `Gagal pada model ${modelName} (HTTP ${response.status}).`;
+            lastErrorMessage = `${modelName}: ${apiMsg}`;
+
+            // Jika model tidak ditemukan / tidak didukung, lanjut ke model berikutnya
+            const isModelIssue =
+              response.status === 404 ||
+              /not found|not supported|unsupported/i.test(apiMsg);
+            if (isModelIssue) {
+              continue;
+            }
+
+            // Untuk error lain (misal quota/auth), tetap coba model lain jika ada
+            continue;
+          }
+
+          const responseParts: Array<Record<string, any>> =
+            data?.candidates?.[0]?.content?.parts || [];
+          const imagePart = responseParts.find(
+            (p) => p?.inlineData?.data && typeof p.inlineData.data === "string"
+          );
+
+          if (!imagePart?.inlineData?.data) {
+            lastErrorMessage = `${modelName}: Respons tidak menyertakan data gambar.`;
+            continue;
+          }
+
+          const mimeType = imagePart.inlineData.mimeType || "image/png";
+          const imageDataUrl = `data:${mimeType};base64,${imagePart.inlineData.data}`;
+
+          succeededItem = {
+            id: String(Date.now()),
+            productTitle: `${variables.judul_produk} ${variables.sorotan_judul}`.trim(),
+            brandName: variables.nama_brand,
+            imageDataUrl,
+            compiledPrompt,
+            modelUsed: modelName,
+            aspectRatio: variables.rasio_aspek,
+            createdAt: new Date().toISOString(),
+          };
+          break;
+        } catch (modelErr) {
+          lastErrorMessage =
+            modelErr instanceof Error
+              ? `${modelName}: ${modelErr.message}`
+              : `${modelName}: Terjadi kesalahan jaringan.`;
+        }
       }
 
-      const mimeType = imagePart.inlineData.mimeType || "image/png";
-      const imageDataUrl = `data:${mimeType};base64,${imagePart.inlineData.data}`;
+      if (!succeededItem) {
+        throw new Error(lastErrorMessage);
+      }
 
-      const item: GeneratedRenderItem = {
-        id: String(Date.now()),
-        productTitle: `${variables.judul_produk} ${variables.sorotan_judul}`.trim(),
-        brandName: variables.nama_brand,
-        imageDataUrl,
-        compiledPrompt,
-        modelUsed: modelName,
-        aspectRatio: variables.rasio_aspek,
-        createdAt: new Date().toISOString(),
-      };
-
-      setCurrentRender(item);
-      setRenderHistory((prev) => [item, ...prev].slice(0, 9));
+      setCurrentRender(succeededItem);
+      setRenderHistory((prev) => [succeededItem!, ...prev].slice(0, 9));
     } catch (err) {
       setGenerateError(
         err instanceof Error ? err.message : "Terjadi kesalahan saat generate gambar."
