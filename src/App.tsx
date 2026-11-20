@@ -313,29 +313,97 @@ export default function App() {
     setGenerateError(null);
 
     try {
+      // Gunakan model Gemini multimodal yang mendukung output gambar via generateContent
       const modelName =
-        qualityMode === "hd" ? "imagen-3.0-generate-002" : "imagen-3.0-generate-002";
+        qualityMode === "hd"
+          ? "gemini-3.1-flash-image-preview"
+          : "gemini-2.5-flash-image";
+
+      const parts: Array<Record<string, any>> = [
+        {
+          text: `${compiledPrompt}\n\nInstruksi tambahan: Rasio aspek ${
+            variables.rasio_aspek || "1:1"
+          }, mode kualitas ${qualityMode}, kunci tata letak referensi: ${
+            useReferenceLayout ? "aktif" : "nonaktif"
+          }.`,
+        },
+      ];
+
+      // Jika ada logo yang diunggah (data URL), sertakan sebagai inlineData
+      if (
+        variables.logo_image_url &&
+        variables.logo_image_url.startsWith("data:")
+      ) {
+        const match = variables.logo_image_url.match(
+          /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/
+        );
+        if (match?.[1] && match?.[2]) {
+          parts.push({
+            inlineData: {
+              mimeType: match[1],
+              data: match[2],
+            },
+          });
+        }
+      }
 
       const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:predict?key=${encodeURIComponent(key)}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(key)}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            instances: [
-              {
-                prompt: `${compiledPrompt} (Mode: ${qualityMode}, Reference layout: ${
-                  useReferenceLayout ? "aktif" : "nonaktif"
-                })`,
-              },
-            ],
-            parameters: {
-              sampleCount: 1,
-              aspectRatio: variables.rasio_aspek || "1:1",
+            contents: [{ parts }],
+            generationConfig: {
+              responseModalities: ["IMAGE"],
             },
           }),
         }
       );
+
+      const data = await safeParseJson(response);
+      if (!response.ok) {
+        throw new Error(
+          data?.error?.message || `Gagal merender gambar poster (HTTP ${response.status}).`
+        );
+      }
+
+      const responseParts: Array<Record<string, any>> =
+        data?.candidates?.[0]?.content?.parts || [];
+      const imagePart = responseParts.find(
+        (p) => p?.inlineData?.data && typeof p.inlineData.data === "string"
+      );
+
+      if (!imagePart?.inlineData?.data) {
+        throw new Error(
+          "Respons API tidak menyertakan gambar. Pastikan model mendukung output gambar untuk API key Anda."
+        );
+      }
+
+      const mimeType = imagePart.inlineData.mimeType || "image/png";
+      const imageDataUrl = `data:${mimeType};base64,${imagePart.inlineData.data}`;
+
+      const item: GeneratedRenderItem = {
+        id: String(Date.now()),
+        productTitle: `${variables.judul_produk} ${variables.sorotan_judul}`.trim(),
+        brandName: variables.nama_brand,
+        imageDataUrl,
+        compiledPrompt,
+        modelUsed: modelName,
+        aspectRatio: variables.rasio_aspek,
+        createdAt: new Date().toISOString(),
+      };
+
+      setCurrentRender(item);
+      setRenderHistory((prev) => [item, ...prev].slice(0, 9));
+    } catch (err) {
+      setGenerateError(
+        err instanceof Error ? err.message : "Terjadi kesalahan saat generate gambar."
+      );
+    } finally {
+      setIsGenerating(false);
+    }
+  };
 
       const data = await safeParseJson(response);
       if (!response.ok) {
