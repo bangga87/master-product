@@ -71,7 +71,6 @@ export function AiRenderPanel({
           </button>
         </div>
 
-        {/* Render Controls */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-medium text-slate-700 mb-1.5">
@@ -123,7 +122,6 @@ export function AiRenderPanel({
           </div>
         </div>
 
-        {/* Error Display */}
         {errorMessage && (
           <div
             role="alert"
@@ -134,7 +132,6 @@ export function AiRenderPanel({
           </div>
         )}
 
-        {/* Active Output Frame */}
         <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-4">
           {isGenerating ? (
             <div className="mx-auto max-w-[460px] aspect-square rounded-lg border border-slate-200 bg-white flex flex-col items-center justify-center gap-3 p-6 text-center">
@@ -192,7 +189,6 @@ export function AiRenderPanel({
         </div>
       </div>
 
-      {/* Render History Gallery */}
       {history.length > 0 && (
         <div className="rounded-xl border border-slate-200 bg-white p-5">
           <div className="flex items-center justify-between mb-3">
