@@ -1,0 +1,6 @@
+{
+  "name": "Kemasku Prompt Studio",
+  "description": "Studio Master Prompt Dinamis & Generator Poster Katalog Produk dengan Placeholder Variabel Terintegrasi Gemini AI.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
